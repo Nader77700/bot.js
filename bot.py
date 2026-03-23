@@ -56,27 +56,7 @@ SIZES = [
 user_state = {}
 user_data = {}
 
-# ===== TOKEN =====
-def get_token():
-    headers = {
-        'Content-Type': 'application/json',
-        'X-Android-Package': 'com.photoroom.app',
-        'X-Android-Cert': '0424A4898A4B33940D8BF16E44251B876E97F8D0',
-        'User-Agent': 'Dalvik/2.1.0',
-    }
-
-    params = {'key': 'AIzaSyAJGrgbFGB_-h8V2oJLr4b-_ipetqM0duU'}
-
-    r = requests.post(
-        'https://www.googleapis.com/identitytoolkit/v3/relyingparty/signupNewUser',
-        headers=headers,
-        params=params,
-        json={'clientType': 'CLIENT_TYPE_ANDROID'}
-    ).json()
-
-    return r.get("idToken")
-
-# ===== توليد الصور (معدلة صح) =====
+# ===== توليد الصور (نسخة قوية) =====
 def generate_images(prompt, styleId, sizeId):
     try:
         r = requests.post(
@@ -89,16 +69,25 @@ def generate_images(prompt, styleId, sizeId):
                 'size': '1024x1024',
                 'enhancePrompt': 'on',
                 'numImages': 4
-            }
+            },
+            timeout=30
         )
 
-        data = r.json()
+        # محاولة قراءة الرد
+        try:
+            data = r.json()
+        except:
+            return []
 
         images = []
 
-        if "images" in data:
-            for img in data["images"]:
-                images.append(img)
+        # الشكل 1
+        if isinstance(data, dict) and "images" in data:
+            images = data["images"]
+
+        # الشكل 2 (fallback)
+        if not images and isinstance(data, list):
+            images = data
 
         return images
 
@@ -165,13 +154,18 @@ def handle_prompt(msg):
     imgs = generate_images(prompt, styleId, sizeId)
 
     if not imgs:
-        bot.send_message(uid, "❌ حصل مشكلة في التوليد")
+        bot.send_message(uid, "❌ حصل مشكلة في التوليد (API مش بيرد)")
     else:
-        for url in imgs:
+        sent = False
+        for img in imgs:
             try:
-                bot.send_photo(uid, url)
+                bot.send_photo(uid, img)
+                sent = True
             except:
-                bot.send_message(uid, url)
+                pass
+
+        if not sent:
+            bot.send_message(uid, "❌ الصور رجعت بس مش قابلة للإرسال")
 
     user_state.pop(uid, None)
 
