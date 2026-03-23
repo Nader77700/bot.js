@@ -4,6 +4,8 @@ import requests
 import urllib3
 import json
 import os
+import base64
+from io import BytesIO
 
 urllib3.disable_warnings()
 
@@ -56,7 +58,7 @@ SIZES = [
 user_state = {}
 user_data = {}
 
-# ===== توليد الصور (نسخة قوية) =====
+# ===== توليد الصور =====
 def generate_images(prompt, styleId, sizeId):
     try:
         r = requests.post(
@@ -73,7 +75,6 @@ def generate_images(prompt, styleId, sizeId):
             timeout=30
         )
 
-        # محاولة قراءة الرد
         try:
             data = r.json()
         except:
@@ -81,12 +82,13 @@ def generate_images(prompt, styleId, sizeId):
 
         images = []
 
-        # الشكل 1
-        if isinstance(data, dict) and "images" in data:
-            images = data["images"]
+        if isinstance(data, dict):
+            if "images" in data:
+                images = data["images"]
+            elif "data" in data:
+                images = data["data"]
 
-        # الشكل 2 (fallback)
-        if not images and isinstance(data, list):
+        elif isinstance(data, list):
             images = data
 
         return images
@@ -154,15 +156,27 @@ def handle_prompt(msg):
     imgs = generate_images(prompt, styleId, sizeId)
 
     if not imgs:
-        bot.send_message(uid, "❌ حصل مشكلة في التوليد (API مش بيرد)")
+        bot.send_message(uid, "❌ حصل مشكلة في التوليد")
     else:
         sent = False
+
         for img in imgs:
             try:
-                bot.send_photo(uid, img)
-                sent = True
-            except:
-                pass
+                # ✅ لو لينك مباشر
+                if isinstance(img, str) and img.startswith("http"):
+                    bot.send_photo(uid, img)
+                    sent = True
+
+                # ✅ لو base64
+                elif isinstance(img, str):
+                    image_data = base64.b64decode(img)
+                    bio = BytesIO(image_data)
+                    bio.name = 'image.png'
+                    bot.send_photo(uid, bio)
+                    sent = True
+
+            except Exception as e:
+                print("SEND ERROR:", e)
 
         if not sent:
             bot.send_message(uid, "❌ الصور رجعت بس مش قابلة للإرسال")
