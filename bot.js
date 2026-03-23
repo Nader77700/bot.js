@@ -4,7 +4,7 @@ const fs = require("fs");
 
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 
-const ADMIN_ID = 123456789; // 🔥 حط الايدي بتاعك هنا
+const ADMIN_ID = 1760401627; // 🔥 حط الايدي بتاعك هنا
 
 let users = {};
 let banned = {};
