@@ -8,11 +8,11 @@ import os
 urllib3.disable_warnings()
 
 BOT_TOKEN = os.getenv("BOT_TOKEN")
-ADMIN_ID = 1760401627  # 👑 حط الايدي بتاعك هنا
+ADMIN_ID = 1760401627
 
 bot = telebot.TeleBot(BOT_TOKEN)
 
-# ===== DB بسيط =====
+# ===== DB =====
 if not os.path.exists("users.json"):
     with open("users.json", "w") as f:
         json.dump([], f)
@@ -33,88 +33,90 @@ def get_banned():
 def save_banned(b):
     json.dump(b, open("banned.json", "w"))
 
-# ===== سكربتك زي ما هو =====
+# ===== STYLES =====
 STYLES = [
     ("diversity", "التنوع — Diversity"),
-    ("hyper-realistic", "واقعي هواية — Hyper Realistic"),
-    ("impressionist", "ستايل انطباعي — Impressionist"),
-    ("low-poly", "ستايل خفيف التفاصيل — Low Poly"),
-    ("isometric", "منظور أيزومتريك — Isometric"),
-    ("cyberpunk", "سايبربنك — Cyberpunk"),
-    ("baroque", "باروكي — Baroque"),
-    ("abstract-expressionism", "مجرد تعبيري — Abstract Expressionism"),
-    ("photorealistic-cgi", "CGI واقعي — Photorealistic CGI"),
-    ("surrealist", "سيريالي — Surrealist")
+    ("hyper-realistic", "واقعي — Hyper Realistic"),
+    ("impressionist", "انطباعي — Impressionist"),
+    ("low-poly", "Low Poly"),
+    ("isometric", "Isometric"),
+    ("cyberpunk", "Cyberpunk"),
+    ("baroque", "Baroque"),
+    ("abstract-expressionism", "Abstract"),
+    ("photorealistic-cgi", "CGI"),
+    ("surrealist", "Surreal")
 ]
 
 SIZES = [
-    ("SQUARE_HD", "مربع 1:1"),
-    ("PORTRAIT_4_3", "طولي 3:4"),
-    ("PORTRAIT_16_9", "طولي 9:16"),
-    ("LANDSCAPE_4_3", "عرضي 4:3"),
-    ("LANDSCAPE_16_9", "عرضي 16:9")
+    ("SQUARE_HD", "1:1"),
+    ("PORTRAIT_4_3", "3:4"),
+    ("PORTRAIT_16_9", "9:16"),
+    ("LANDSCAPE_4_3", "4:3"),
+    ("LANDSCAPE_16_9", "16:9")
 ]
 
 user_state = {}
 user_data = {}
 
-# ===== نفس دوالك بدون تغيير =====
+# ===== TOKEN =====
 def get_token():
     headers = {
         'Content-Type': 'application/json',
         'X-Android-Package': 'com.photoroom.app',
         'X-Android-Cert': '0424A4898A4B33940D8BF16E44251B876E97F8D0',
-        'Accept-Language': 'en-US',
-        'User-Agent': 'Dalvik/2.1.0 (Linux; Android 12)',
+        'User-Agent': 'Dalvik/2.1.0',
     }
 
     params = {'key': 'AIzaSyAJGrgbFGB_-h8V2oJLr4b-_ipetqM0duU'}
 
     r = requests.post(
         'https://www.googleapis.com/identitytoolkit/v3/relyingparty/signupNewUser',
-        headers=headers, params=params, json={'clientType': 'CLIENT_TYPE_ANDROID'}
+        headers=headers,
+        params=params,
+        json={'clientType': 'CLIENT_TYPE_ANDROID'}
     ).json()
 
-    return r["idToken"]
+    return r.get("idToken")
 
+# ===== توليد الصور (معدلة صح) =====
 def generate_images(prompt, styleId, sizeId):
-    token = get_token()
+    try:
+        token = get_token()
 
-    headers = {
-        'Authorization': token,
-        'Content-Type': 'application/json',
-    }
+        headers = {
+            'Authorization': token,
+            'Content-Type': 'application/json',
+        }
 
-    payload = {
-        "userPrompt": prompt,
-        "appId": "expert",
-        "styleId": styleId,
-        "sizeId": sizeId,
-        "numberOfImages": 4
-    }
+        payload = {
+            "userPrompt": prompt,
+            "appId": "expert",
+            "styleId": styleId,
+            "sizeId": sizeId,
+            "numberOfImages": 4
+        }
 
-    resp = requests.post(
-        "https://serverless-api.photoroom.com/v2/ai-tools/generate-images",
-        headers=headers,
-        json=payload,
-        stream=True,
-        verify=False
-    )
+        resp = requests.post(
+            "https://serverless-api.photoroom.com/v2/ai-tools/generate-images",
+            headers=headers,
+            json=payload,
+            verify=False
+        )
 
-    bg = []
+        data = resp.json()
 
-    for line in resp.iter_lines():
-        if not line:
-            continue
+        images = []
 
-        l = line.decode()
+        if "data" in data:
+            for item in data["data"]:
+                if "imageUrl" in item:
+                    images.append(item["imageUrl"])
 
-        if '"imageUrl":"' in l:
-            s = l.find('"imageUrl":"') + 12
-            e = l.find('"', s)
-            bg.append(l[s:e])
+        return images
 
-    return bg
+    except Exception as e:
+        print("ERROR:", e)
+        return []
 
 # ===== START =====
 @bot.message_handler(commands=['start'])
@@ -135,7 +137,7 @@ def start(msg):
 
     bot.send_message(uid, "👋 اختار ستايل الصورة:", reply_markup=kb)
 
-# ===== اختيار القياس =====
+# ===== اختيار ستايل =====
 @bot.callback_query_handler(func=lambda c: c.data.startswith("style:"))
 def choose_size(call):
     uid = call.from_user.id
@@ -148,7 +150,7 @@ def choose_size(call):
 
     bot.edit_message_text("اختار القياس:", call.message.chat.id, call.message.message_id, reply_markup=kb)
 
-# ===== اختيار البرومبت =====
+# ===== اختيار المقاس =====
 @bot.callback_query_handler(func=lambda c: c.data.startswith("size:"))
 def ask_prompt(call):
     uid = call.from_user.id
@@ -174,13 +176,18 @@ def handle_prompt(msg):
 
     imgs = generate_images(prompt, styleId, sizeId)
 
-    for url in imgs:
-        bot.send_photo(uid, url)
+    if not imgs:
+        bot.send_message(uid, "❌ حصل مشكلة في التوليد")
+    else:
+        for url in imgs:
+            try:
+                bot.send_photo(uid, url)
+            except:
+                bot.send_message(uid, url)
 
     user_state.pop(uid, None)
 
 # ===== ADMIN =====
-
 @bot.message_handler(commands=['stats'])
 def stats(msg):
     if msg.from_user.id != ADMIN_ID:
@@ -191,7 +198,6 @@ def stats(msg):
 def ban(msg):
     if msg.from_user.id != ADMIN_ID:
         return
-
     try:
         uid = int(msg.text.split()[1])
         banned = get_banned()
@@ -199,13 +205,12 @@ def ban(msg):
         save_banned(banned)
         bot.send_message(msg.chat.id, "🚫 تم الحظر")
     except:
-        bot.send_message(msg.chat.id, "اكتب كدا: /ban 123")
+        bot.send_message(msg.chat.id, "اكتب: /ban 123")
 
 @bot.message_handler(commands=['unban'])
 def unban(msg):
     if msg.from_user.id != ADMIN_ID:
         return
-
     try:
         uid = int(msg.text.split()[1])
         banned = get_banned()
@@ -219,14 +224,12 @@ def unban(msg):
 def broadcast(msg):
     if msg.from_user.id != ADMIN_ID:
         return
-
     text = msg.text.replace("/broadcast ", "")
     for u in get_users():
         try:
             bot.send_message(u, text)
         except:
             pass
-
     bot.send_message(msg.chat.id, "📢 تم الإرسال")
 
 print("🔥 Bot Running...")
