@@ -1,166 +1,187 @@
 const TelegramBot = require("node-telegram-bot-api");
 const axios = require("axios");
 const fs = require("fs");
+const FormData = require("form-data");
+const crypto = require("crypto");
 
 const bot = new TelegramBot(process.env.BOT_TOKEN, { polling: true });
 
-const ADMIN_ID = 1760401627; // 🔥 حط الايدي بتاعك هنا
-
-let users = {};
-let banned = {};
+// تخزين مؤقت
 let userState = {};
 
-// ===== START =====
-bot.onText(/\/start/, (msg) => {
-  const id = msg.chat.id;
+function generateSession() {
+  return crypto.createHash("md5")
+    .update(Date.now() + Math.random().toString())
+    .digest("hex") + "0";
+}
 
-  if (banned[id]) return bot.sendMessage(id, "❌ انت محظور");
-
-  users[id] = true;
-
-  bot.sendMessage(id, "👋 أهلا بيك في NK AI BOT", {
-    reply_markup: {
-      keyboard: [
-        ["🎨 توليد صورة"],
-        ["🎬 تحويل لفيديو"],
-        ["ℹ️ المساعدة"]
-      ],
-      resize_keyboard: true
-    }
-  });
-});
-
-// ===== MENU =====
-bot.on("message", async (msg) => {
-  const id = msg.chat.id;
-  const text = msg.text;
-
-  if (banned[id]) return;
-
-  if (text === "ℹ️ المساعدة") {
-    return bot.sendMessage(id, `
-📌 الاستخدام:
-
-🎨 توليد صورة:
-- اكتب وصف → تستلم صورة
-
-🎬 فيديو:
-- ابعت صورة
-- اكتب وصف
-- تستلم فيديو
-`);
-  }
-
-  if (text === "🎨 توليد صورة") {
-    userState[id] = { mode: "image" };
-    return bot.sendMessage(id, "✍️ اكتب وصف الصورة");
-  }
-
-  if (text === "🎬 تحويل لفيديو") {
-    userState[id] = { mode: "video_wait_image" };
-    return bot.sendMessage(id, "📷 ابعت الصورة الأول");
-  }
-});
-
-// ===== IMAGE GENERATION =====
-bot.on("message", async (msg) => {
-  const id = msg.chat.id;
-
-  if (!userState[id] || userState[id].mode !== "image") return;
-
-  const prompt = msg.text;
-
-  bot.sendMessage(id, "⏳ جاري توليد الصورة...");
-
+async function getUploadUrl(session) {
   try {
     const res = await axios.post(
-      "https://api-inference.huggingface.co/models/stabilityai/stable-diffusion-2",
-      { inputs: prompt },
+      "https://api.pixwith.ai/api/chats/pre_url",
+      {
+        image_name: "file.jpg",
+        content_type: "image/jpeg"
+      },
       {
         headers: {
-          Authorization: `Bearer ${process.env.HF_TOKEN}`
+          "x-session-token": session,
+          "Content-Type": "application/json"
+        }
+      }
+    );
+    return res.data;
+  } catch {
+    return null;
+  }
+}
+
+async function uploadImage(uploadData, filePath) {
+  try {
+    const s3 = uploadData.data.url;
+    const form = new FormData();
+
+    Object.entries(s3.fields).forEach(([k, v]) => {
+      form.append(k, v);
+    });
+
+    form.append("file", fs.createReadStream(filePath));
+
+    const res = await axios.post(s3.url, form, {
+      headers: form.getHeaders()
+    });
+
+    if (res.status === 204 || res.status === 200) {
+      return s3.fields.key;
+    }
+
+    return null;
+  } catch {
+    return null;
+  }
+}
+
+async function createVideo(session, key, prompt) {
+  try {
+    const res = await axios.post(
+      "https://api.pixwith.ai/api/items/create",
+      {
+        images: { image1: key },
+        prompt,
+        options: {
+          prompt_optimization: true,
+          num_outputs: 1,
+          aspect_ratio: "16:9",
+          resolution: "480p",
+          duration: 4,
+          sound: true
         },
-        responseType: "arraybuffer"
+        model_id: "3-38"
+      },
+      {
+        headers: {
+          "x-session-token": session,
+          "Content-Type": "application/json"
+        }
+      }
+    );
+    return res.data;
+  } catch {
+    return null;
+  }
+}
+
+async function checkResult(session) {
+  try {
+    const res = await axios.post(
+      "https://api.pixwith.ai/api/items/history",
+      {
+        tool_type: "3",
+        page: 0,
+        page_size: 10
+      },
+      {
+        headers: {
+          "x-session-token": session,
+          "Content-Type": "application/json"
+        }
       }
     );
 
-    const img = Buffer.from(res.data, "binary");
-
-    bot.sendPhoto(id, img);
-
+    return res.data;
   } catch {
-    bot.sendMessage(id, "❌ فشل التوليد");
+    return null;
   }
+}
 
-  userState[id] = null;
+// ===== START =====
+bot.onText(/\/start/, (msg) => {
+  bot.sendMessage(msg.chat.id, "🔥 ابعت صورة عشان احولها لفيديو");
 });
 
-// ===== RECEIVE IMAGE =====
+// ===== استقبال صورة =====
 bot.on("photo", async (msg) => {
-  const id = msg.chat.id;
-
-  if (!userState[id] || userState[id].mode !== "video_wait_image") return;
+  const chatId = msg.chat.id;
 
   const fileId = msg.photo[msg.photo.length - 1].file_id;
-
   const file = await bot.getFile(fileId);
-  const url = `https://api.telegram.org/file/bot${process.env.BOT_TOKEN}/${file.file_path}`;
+  const fileUrl = `https://api.telegram.org/file/bot${process.env.BOT_TOKEN}/${file.file_path}`;
 
-  const response = await axios.get(url, { responseType: "arraybuffer" });
+  const filePath = `./${chatId}.jpg`;
+  const response = await axios.get(fileUrl, { responseType: "stream" });
 
-  const filePath = `./temp_${id}.jpg`;
-  fs.writeFileSync(filePath, response.data);
+  const writer = fs.createWriteStream(filePath);
+  response.data.pipe(writer);
 
-  userState[id] = {
-    mode: "video_wait_prompt",
-    image: filePath
-  };
-
-  bot.sendMessage(id, "✍️ اكتب وصف الفيديو");
-});
-
-// ===== VIDEO GENERATION (Fake Demo) =====
-bot.on("message", async (msg) => {
-  const id = msg.chat.id;
-
-  if (!userState[id] || userState[id].mode !== "video_wait_prompt") return;
-
-  const prompt = msg.text;
-
-  bot.sendMessage(id, "⏳ جاري إنشاء الفيديو...");
-
-  try {
-    // 🔥 هنا ممكن تربطه بـ Pixwith
-    await new Promise(r => setTimeout(r, 5000));
-
-    bot.sendMessage(id, "🎬 الفيديو:");
-    bot.sendMessage(id, "https://example.com/video.mp4");
-
-  } catch {
-    bot.sendMessage(id, "❌ فشل الفيديو");
-  }
-
-  userState[id] = null;
-});
-
-// ===== ADMIN =====
-bot.onText(/\/stats/, (msg) => {
-  if (msg.chat.id !== ADMIN_ID) return;
-
-  bot.sendMessage(msg.chat.id, `👥 المستخدمين: ${Object.keys(users).length}`);
-});
-
-bot.onText(/\/broadcast (.+)/, (msg, match) => {
-  if (msg.chat.id !== ADMIN_ID) return;
-
-  Object.keys(users).forEach(id => {
-    bot.sendMessage(id, match[1]);
+  writer.on("finish", () => {
+    userState[chatId] = { filePath };
+    bot.sendMessage(chatId, "✍️ اكتب وصف الفيديو");
   });
 });
 
-bot.onText(/\/ban (.+)/, (msg, match) => {
-  if (msg.chat.id !== ADMIN_ID) return;
+// ===== استقبال النص =====
+bot.on("message", async (msg) => {
+  const chatId = msg.chat.id;
 
-  banned[match[1]] = true;
-  bot.sendMessage(msg.chat.id, "🚫 تم الحظر");
+  if (!userState[chatId] || !msg.text) return;
+
+  const prompt = msg.text;
+  const filePath = userState[chatId].filePath;
+
+  bot.sendMessage(chatId, "⏳ جاري إنشاء الفيديو...");
+
+  const session = generateSession();
+
+  const upload = await getUploadUrl(session);
+  if (!upload) return bot.sendMessage(chatId, "❌ فشل");
+
+  const key = await uploadImage(upload, filePath);
+  if (!key) return bot.sendMessage(chatId, "❌ فشل رفع الصورة");
+
+  const create = await createVideo(session, key, prompt);
+  if (!create) return bot.sendMessage(chatId, "❌ فشل التوليد");
+
+  // انتظار النتيجة
+  for (let i = 0; i < 20; i++) {
+    await new Promise(r => setTimeout(r, 10000));
+
+    const history = await checkResult(session);
+    const items = history?.data?.items;
+
+    if (items && items.length > 0) {
+      const latest = items[0];
+
+      if (latest.status === 2) {
+        const video = latest.result_urls.find(v => !v.is_input);
+
+        if (video) {
+          bot.sendVideo(chatId, video.hd);
+          delete userState[chatId];
+          return;
+        }
+      }
+    }
+  }
+
+  bot.sendMessage(chatId, "❌ فشل أو تأخير");
 });
