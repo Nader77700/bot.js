@@ -81,57 +81,26 @@ def get_token():
 # ===== توليد الصور (معدلة صح) =====
 def generate_images(prompt, styleId, sizeId):
     try:
-        token = get_token()
-
-        headers = {
-            'Authorization': token,
-            'Content-Type': 'application/json',
-        }
-
-        payload = {
-            "userPrompt": prompt,
-            "appId": "expert",
-            "styleId": styleId,
-            "sizeId": sizeId,
-            "numberOfImages": 4
-        }
-
-        resp = requests.post(
-            "https://serverless-api.photoroom.com/v2/ai-tools/generate-images",
-            headers=headers,
-            json=payload,
-            stream=True,
-            verify=False
+        r = requests.post(
+            'https://koala.sh/api/image-generation/',
+            headers={'content-type': 'application/json'},
+            json={
+                'model': 'standard',
+                'prompt': prompt,
+                'style': styleId,
+                'size': '1024x1024',
+                'enhancePrompt': 'on',
+                'numImages': 4
+            }
         )
+
+        data = r.json()
 
         images = []
 
-        for line in resp.iter_lines():
-            if not line:
-                continue
-
-            try:
-                decoded = line.decode()
-
-                if '"imageUrl":"' in decoded:
-                    start = decoded.find('"imageUrl":"') + 12
-                    end = decoded.find('"', start)
-                    url = decoded[start:end]
-                    images.append(url)
-
-            except:
-                pass
-
-        return images
-
-    except Exception as e:
-        print("ERROR:", e)
-        return []
-
-        if "data" in data:
-            for item in data["data"]:
-                if "imageUrl" in item:
-                    images.append(item["imageUrl"])
+        if "images" in data:
+            for img in data["images"]:
+                images.append(img)
 
         return images
 
