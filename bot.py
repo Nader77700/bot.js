@@ -7,7 +7,7 @@ import os
 
 urllib3.disable_warnings()
 
-BOT_TOKEN = "PUT_YOUR_TOKEN_HERE"
+BOT_TOKEN = os.getenv("BOT_TOKEN")
 ADMIN_ID = 1760401627  # 👑 حط الايدي بتاعك هنا
 
 bot = telebot.TeleBot(BOT_TOKEN)
