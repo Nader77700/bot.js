@@ -100,12 +100,33 @@ def generate_images(prompt, styleId, sizeId):
             "https://serverless-api.photoroom.com/v2/ai-tools/generate-images",
             headers=headers,
             json=payload,
+            stream=True,
             verify=False
         )
 
-        data = resp.json()
-
         images = []
+
+        for line in resp.iter_lines():
+            if not line:
+                continue
+
+            try:
+                decoded = line.decode()
+
+                if '"imageUrl":"' in decoded:
+                    start = decoded.find('"imageUrl":"') + 12
+                    end = decoded.find('"', start)
+                    url = decoded[start:end]
+                    images.append(url)
+
+            except:
+                pass
+
+        return images
+
+    except Exception as e:
+        print("ERROR:", e)
+        return []
 
         if "data" in data:
             for item in data["data"]:
