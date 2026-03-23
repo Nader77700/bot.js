@@ -35,16 +35,14 @@ def save_banned(b):
 
 # ===== STYLES =====
 STYLES = [
-    ("diversity", "التنوع — Diversity"),
-    ("hyper-realistic", "واقعي — Hyper Realistic"),
-    ("impressionist", "انطباعي — Impressionist"),
-    ("low-poly", "Low Poly"),
+    ("anime", "Anime"),
+    ("3d", "3D Rendering"),
     ("isometric", "Isometric"),
-    ("cyberpunk", "Cyberpunk"),
-    ("baroque", "Baroque"),
-    ("abstract-expressionism", "Abstract"),
-    ("photorealistic-cgi", "CGI"),
-    ("surrealist", "Surreal")
+    ("fantasy", "Fantasy"),
+    ("watercolor", "Watercolor"),
+    ("photo", "Photo"),
+    ("general", "General"),
+    ("illustration", "Illustration")
 ]
 
 SIZES = [
